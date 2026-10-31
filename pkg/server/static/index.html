@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Go Harness · 售后业务 Agent Demo</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --text:#e6e8ee; --dim:#9aa3b2; --ok:#3ecf8e; --warn:#f5b942; --bad:#ef5f5f; --accent:#5b9cff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 14px/1.6 -apple-system, "PingFang SC", "Helvetica Neue", Arial, sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; align-items:center; gap:16px; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  header .meta { color:var(--dim); font-size:12px; }
+  .wrap { display:grid; grid-template-columns: 1.6fr 1fr; gap:16px; padding:16px; align-items:start; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .panel h2 { font-size:13px; margin:0 0 10px; color:var(--dim); font-weight:600; letter-spacing:.04em; }
+  #chat { min-height: 380px; max-height: 60vh; overflow:auto; display:flex; flex-direction:column; gap:10px; }
+  .msg { padding:10px 12px; border-radius:10px; max-width:88%; white-space:pre-wrap; word-break:break-word; }
+  .msg.user { align-self:flex-end; background:#1f2b45; border:1px solid #2c3f63; }
+  .msg.assistant { align-self:flex-start; background:#1b2130; border:1px solid var(--line); }
+  .msg.sys { align-self:center; color:var(--dim); font-size:12px; background:transparent; border:1px dashed var(--line); }
+  .tools { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  .chip { font-size:11px; padding:2px 8px; border-radius:999px; background:#232a38; border:1px solid var(--line); color:var(--dim); }
+  .tool-result { margin-top:8px; font:12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background:#12161f; border:1px solid var(--line); border-radius:8px; padding:8px; color:#c8d0e0; max-height:180px; overflow:auto; white-space:pre-wrap; }
+  .composer { display:flex; gap:8px; margin-top:12px; }
+  .composer input { flex:1; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#12161f; color:var(--text); }
+  button { cursor:pointer; border-radius:8px; border:1px solid var(--line); background:#232a38; color:var(--text); padding:8px 12px; font-size:13px; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:#24467d; border-color:#2f5ea8; }
+  button.ok { background:#1d3a2b; border-color:#2c6b4b; color:#a9f0c8; }
+  button.no { background:#3a1f22; border-color:#6b2c31; color:#f6b3b8; }
+  .quick { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .approval { border:1px solid #3a4a66; background:#151d2b; border-radius:10px; padding:10px; margin-bottom:10px; }
+  .approval .head { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+  .approval .id { font:12px ui-monospace, monospace; color:var(--accent); }
+  .approval .summary { margin:8px 0; color:var(--text); }
+  .approval .actions { display:flex; gap:8px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-weight:500; }
+  .risk-read { color:#7fd1a6; } .risk-write-soft { color:#f5d67a; } .risk-write-hard { color:#ffb27a; } .risk-money { color:#ff8f8f; }
+  .kpi { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; font-size:12px; color:var(--dim); }
+  .kpi b { display:block; color:var(--text); font-size:16px; font-weight:600; }
+  .empty { color:var(--dim); font-size:12px; }
+  .banner { margin-top:10px; padding:8px 10px; border-radius:8px; background:#3a2f14; border:1px solid #6b551f; color:#f5d67a; font-size:12px; display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Go Harness · 售后业务 Agent</h1>
+  <div class="meta" id="meta">初始化中…</div>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <h2>对话</h2>
+    <div id="chat"></div>
+    <div class="banner" id="banner"></div>
+    <div class="composer">
+      <input id="input" placeholder="例如：我的订单 A1001 一直没发货，我要退款" autocomplete="off">
+      <button class="primary" onclick="send()">发送</button>
+    </div>
+    <div class="quick">
+      <button onclick="quick('订单 A1001 现在什么状态？')">查订单</button>
+      <button onclick="quick('SKU-1001 还有货吗？')">查库存</button>
+      <button onclick="quick('订单 A1001 一直没发货，我要退款')">申请退款</button>
+      <button onclick="quick('我要投诉，转人工处理')">建工单</button>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel" style="margin-bottom:16px">
+      <h2>待审批（涉钱动作）</h2>
+      <div id="approvals"><div class="empty">暂无待审批</div></div>
+    </div>
+    <div class="panel" style="margin-bottom:16px">
+      <h2>业务能力插件与动作</h2>
+      <div id="plugins" class="empty">…</div>
+      <table id="actions"></table>
+    </div>
+    <div class="panel">
+      <h2>用量与成本</h2>
+      <div class="kpi" id="usage"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let sessionId = null;
+let lastSeq = 0;
+let es = null;
+
+async function boot() {
+  const r = await fetch('/api/sessions', { method:'POST', headers:{'content-type':'application/json'}, body:'{}' });
+  const j = await r.json();
+  sessionId = j.id;
+  document.getElementById('meta').textContent = '会话 ' + j.id + ' · 租户 ' + j.tenant + ' · 场景 ' + j.scenario + ' · 模型 ' + j.model;
+  connect();
+  await loadActions();
+  await loadApprovals();
+  await loadUsage();
+  setInterval(loadApprovals, 2000);
+  setInterval(loadUsage, 5000);
+}
+
+function connect() {
+  if (es) { es.close(); es = null; }
+  es = new EventSource('/api/sessions/' + sessionId + '/stream?after=' + lastSeq);
+  ['turn/start','user/message','request/header','assistant/message','tool/result','turn/end'].forEach(function (t) {
+    es.addEventListener(t, function (e) { onEvent(t, JSON.parse(e.data)); });
+  });
+  es.addEventListener('done', function () { if (es) { es.close(); es = null; } loadApprovals(); });
+  es.onerror = function () { /* 浏览器会自动重连 */ };
+}
+
+function el(cls, text) {
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  if (text !== undefined) d.textContent = text;
+  return d;
+}
+
+function onEvent(type, ev) {
+  lastSeq = Math.max(lastSeq, ev.seq || 0);
+  const chat = document.getElementById('chat');
+  const data = ev.data || {};
+  if (type === 'user/message') {
+    const m = el('msg user', data.text || '');
+    chat.appendChild(m);
+    chat.scrollTop = chat.scrollHeight;
+  } else if (type === 'assistant/message') {
+    const box = el('msg assistant');
+    if (data.reasoning) { const r = el('', '（推理）' + data.reasoning); r.style.color = '#8b93a5'; box.appendChild(r); }
+    if (data.text) box.appendChild(el('', data.text));
+    if (data.toolCalls && data.toolCalls.length) {
+      const chips = el('tools');
+      data.toolCalls.forEach(function (tc) { chips.appendChild(el('chip', '调用 ' + tc.name)); });
+      box.appendChild(chips);
+    }
+    if (!data.text && !(data.toolCalls || []).length) box.appendChild(el('', '（无文本输出）'));
+    chat.appendChild(box);
+    chat.scrollTop = chat.scrollHeight;
+  } else if (type === 'tool/result') {
+    const box = el('msg assistant');
+    const head = el('', (data.isError ? '❌ ' : '✅ ') + data.name + ' · ' + data.callId + (data.suspended ? ' · 已挂起' : ''));
+    head.style.color = data.isError ? '#ef5f5f' : '#9aa3b2';
+    box.appendChild(head);
+    box.appendChild(el('tool-result', data.content || ''));
+    chat.appendChild(box);
+    chat.scrollTop = chat.scrollHeight;
+  } else if (type === 'turn/end') {
+    const banner = document.getElementById('banner');
+    if (data.reason === 'waiting-approval') {
+      banner.style.display = 'block';
+      banner.textContent = '该轮已挂起，等待人工审批（' + (data.detail || '') + '）。请在右侧审批队列中处理。';
+    } else if (data.reason === 'completed') {
+      banner.style.display = 'none';
+      chat.appendChild(el('msg sys', '本轮完成 · ' + (data.steps || 0) + ' 步 · ' + (data.usage ? data.usage.totalTokens : 0) + ' tokens'));
+      chat.scrollTop = chat.scrollHeight;
+    } else {
+      banner.style.display = 'block';
+      banner.textContent = '本轮结束：' + data.reason + (data.detail ? ' · ' + data.detail : '');
+    }
+    loadApprovals();
+    loadUsage();
+  }
+}
+
+async function send() {
+  const input = document.getElementById('input');
+  const text = input.value.trim();
+  if (!text || !sessionId) return;
+  input.value = '';
+  document.getElementById('banner').style.display = 'none';
+  const r = await fetch('/api/sessions/' + sessionId + '/messages', {
+    method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ text: text })
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(function () { return {error:'请求失败'}; });
+    alert(j.error || '请求失败');
+  }
+}
+
+function quick(text) { document.getElementById('input').value = text; send(); }
+
+async function loadApprovals() {
+  const r = await fetch('/api/approvals');
+  const list = await r.json();
+  const box = document.getElementById('approvals');
+  box.innerHTML = '';
+  if (!list.length) { box.appendChild(el('empty', '暂无待审批')); return; }
+  list.forEach(function (a) {
+    const card = el('approval');
+    const head = el('head');
+    head.appendChild(el('id', a.id));
+    head.appendChild(el('chip', a.risk));
+    card.appendChild(head);
+    card.appendChild(el('summary', a.summary));
+    const meta = el('empty', a.tool + ' · ' + a.args);
+    meta.style.wordBreak = 'break-all';
+    card.appendChild(meta);
+    const actions = el('actions');
+    const ok = el('', '批准'); ok.className = 'ok';
+    ok.onclick = function () { decide(a.id, true); };
+    const no = el('', '驳回'); no.className = 'no';
+    no.onclick = function () { decide(a.id, false); };
+    actions.appendChild(ok); actions.appendChild(no);
+    card.appendChild(actions);
+    box.appendChild(card);
+  });
+}
+
+async function decide(id, approved) {
+  const r = await fetch('/api/approvals/' + id, {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ approved: approved, by: 'demo-approver', reason: approved ? '核对无误，同意' : '信息不足，驳回' })
+  });
+  const j = await r.json().catch(function () { return {error:'请求失败'}; });
+  if (!r.ok) { alert(j.error || '审批失败'); return; }
+  setTimeout(connect, 200);
+  setTimeout(loadApprovals, 400);
+}
+
+async function loadActions() {
+  const r = await fetch('/api/actions');
+  const j = await r.json();
+  document.getElementById('plugins').textContent = '已加载插件：' + (j.plugins || []).join('、');
+  const table = document.getElementById('actions');
+  table.innerHTML = '<tr><th>动作</th><th>能力</th><th>风险</th><th>审批</th></tr>';
+  (j.actions || []).forEach(function (a) {
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td'); td1.textContent = a.name; td1.title = a.desc;
+    const td2 = document.createElement('td'); td2.textContent = a.capability;
+    const td3 = document.createElement('td'); td3.textContent = a.risk; td3.className = 'risk-' + a.risk;
+    const td4 = document.createElement('td'); td4.textContent = a.needsApproval ? '需要' : '否';
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
+    table.appendChild(tr);
+  });
+}
+
+async function loadUsage() {
+  const r = await fetch('/api/usage');
+  const j = await r.json();
+  const box = document.getElementById('usage');
+  box.innerHTML = '';
+  function kpi(label, value) { const d = document.createElement('div'); const b = document.createElement('b'); b.textContent = value; d.appendChild(b); d.appendChild(document.createTextNode(label)); return d; }
+  box.appendChild(kpi('今日 tokens 用量', (j.tokensToday || 0) + (j.tokenLimit ? ' / ' + j.tokenLimit : '')));
+  box.appendChild(kpi('累计 tokens', j.costTokens || 0));
+  box.appendChild(kpi('累计成本 (CNY)', (j.costAmount || 0).toFixed(4)));
+  box.appendChild(kpi('供应商', j.provider || '-'));
+}
+
+boot();
+</script>
+</body>
+</html>
