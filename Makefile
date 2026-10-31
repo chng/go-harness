@@ -1,4 +1,5 @@
-GO ?= $(HOME)/sdk/go/bin/go
+# 优先用 PATH 里的 go；没有则回落本机安装路径
+GO ?= $(shell command -v go 2>/dev/null || echo $(HOME)/sdk/go/bin/go)
 BIN := bin/gh
 
 .PHONY: all build ghd test vet fmt fmtcheck tools replay clean

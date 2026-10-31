@@ -8,25 +8,26 @@
 - **可运行业务 Agent Demo**：[docs/DEMO.md](docs/DEMO.md)（售后场景，3 个业务能力插件，审批/幂等/续跑全链路）
 - 结论：技术可行；核心 MVP 约 29 人日；本仓库已落地内核/会话/LLM/工具/Agent 循环/CLI，**零第三方依赖**
 
+要求：Go ≥ 1.23（用到 `iter.Seq2` 与 range-over-func）。本机开发用 1.27.3；仓库无第三方依赖，离线也能编译（`GOFLAGS=-mod=mod GOPROXY=off`）。
+
 ## 快速开始
 
 ~~~bash
-export PATH=$HOME/sdk/go/bin:$PATH      # Go 1.27.3 装在 ~/sdk/go
-make build                              # → bin/gh
-./bin/gh tools                          # 列出工具与 JSON Schema
-export DEEPSEEK_API_KEY=sk-...
+make build                       # → bin/gh（若 go 不在一级 PATH，用 make go=/path/to/go）
+./bin/gh tools                   # 列出工具与 JSON Schema
+export DEEPSEEK_API_KEY=sk-...   # 或 GH_API_KEY / OPENAI_API_KEY
 ./bin/gh run "列出当前目录结构并总结" --workdir .
-./bin/gh replay ~/.go-harness/sessions/<时间戳>
+./bin/gh replay ~/.go-harness/sessions/<时间戳>   # 回放事件日志
 ~~~
 
 ## 跑一个业务 Agent Demo（推荐先看这个）
 
 ~~~bash
-export PATH=$HOME/sdk/go/bin:$PATH
-cd ~/go-harness && make ghd
-./bin/ghd --provider mock --addr 127.0.0.1:8088      # 零依赖离线跑
-# 或接真实模型：
-./bin/ghd --provider deepseek --cred-file ~/.dsh/.credentials.yaml --addr 127.0.0.1:8089
+make ghd                                              # → bin/ghd
+./bin/ghd --provider mock --addr 127.0.0.1:8088       # 零依赖离线跑（确定性假模型）
+# 或接真实模型（key 走环境变量，不落盘）：
+export DEEPSEEK_API_KEY=sk-...
+./bin/ghd --provider deepseek --addr 127.0.0.1:8089
 ~~~
 
 浏览器打开 http://127.0.0.1:8088 ：查订单 / 查库存 / 申请退款（涉钱走人工审批）/ 建工单。
